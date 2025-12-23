@@ -365,8 +365,111 @@ The daemon checks battery status every 60 seconds using `termux-battery-status` 
 - `POST /api/services/switch/turn_on` - Turn on the socket
 - `POST /api/services/switch/turn_off` - Turn off the socket
 
+## Preventing Android from Killing Termux
+
+Android aggressively kills background apps. Use these ADB commands to make Termux persistent:
+
+### 1. Connect via ADB (Wireless Debugging)
+
+```bash
+adb connect <device-ip>:<wireless-debugging-port>
+```
+
+### 2. Add Termux to Battery Optimization Whitelist (Doze Mode)
+
+```bash
+adb shell "dumpsys deviceidle whitelist +com.termux"
+```
+
+### 3. Allow Background Execution
+
+```bash
+adb shell "cmd appops set com.termux RUN_IN_BACKGROUND allow"
+adb shell "cmd appops set com.termux RUN_ANY_IN_BACKGROUND allow"
+adb shell "cmd appops set com.termux START_FOREGROUND allow"
+adb shell "cmd appops set com.termux FOREGROUND_SERVICE allow"
+adb shell "cmd appops set com.termux BOOT_COMPLETED allow"
+```
+
+### 4. Start Termux via ADB (if killed)
+
+```bash
+# Open Termux app
+adb shell "am start -n com.termux/.app.TermuxActivity"
+
+# Type and execute sshd command
+adb shell "input text 'sshd' && input keyevent 66"
+```
+
+### 5. Verify Whitelist
+
+```bash
+adb shell "dumpsys deviceidle whitelist" | grep termux
+```
+
+### Additional Device Settings
+
+1. **Battery Settings**: Set Termux to "Unrestricted" in battery optimization
+2. **Termux Notification**: Keep the wake lock notification visible (shows "Termux is running")
+3. **Termux:Boot**: Install from F-Droid for auto-start on device boot
+4. **Wake Lock**: Run `termux-wake-lock` to prevent device sleep
+
+### MIUI/Xiaomi Specific (Disable PowerKeeper)
+
+MIUI has aggressive background app killing. Disable PowerKeeper's ability to kill Termux:
+
+```bash
+# Prevent PowerKeeper from modifying settings
+adb shell "cmd appops set com.miui.powerkeeper WRITE_SETTINGS deny"
+
+# Block PowerKeeper from tracking app usage
+adb shell "cmd appops set com.miui.powerkeeper GET_USAGE_STATS deny"
+
+# Disable PowerKeeper's background monitoring
+adb shell "cmd appops set com.miui.powerkeeper RUN_IN_BACKGROUND deny"
+```
+
+### MIUI Settings UI (via ADB)
+
+```bash
+# Open AutoStart Management - Enable Termux here
+adb shell "am start -n com.miui.securitycenter/com.miui.permcenter.autostart.AutoStartManagementActivity"
+
+# Open Battery Saver settings
+adb shell "am start -n com.miui.securitycenter/com.miui.powercenter.PowerSettings"
+
+# Open Lock Apps settings directly (MIUI 12.5+)
+adb shell "am start -n com.miui.securitycenter/com.miui.powercenter.SpeedBoostLockAppsActivity"
+```
+
+### Lock Apps in MIUI (Prevent "Clear All" from Killing Termux)
+
+This is the **most important setting** to prevent Termux from being killed when you tap "Clear All" in recent apps.
+
+**Method 1: Via ADB (opens the settings screen)**
+```bash
+adb shell "am start -n com.miui.securitycenter/com.miui.powercenter.SpeedBoostLockAppsActivity"
+```
+Then toggle ON **Termux** in the list.
+
+**Method 2: Manual Navigation (MIUI 12.5+)**
+1. Open the **Security** app
+2. Tap the **Settings icon** (gear) in the top-right corner
+3. Scroll down and tap **Boost speed**
+4. Tap **Lock apps**
+5. Find **Termux** and toggle it **ON**
+
+**Method 3: From Recent Apps (Older MIUI versions)**
+1. Open Termux
+2. Open recent apps (swipe up and hold)
+3. Long-press on the Termux card
+4. Tap the **padlock icon** to lock it
+
+Once locked, Termux will show a small lock icon in recent apps and will **NOT be killed** when you tap "Clear All".
+
 ## Notes
 
 - First startup takes a while as HA downloads additional components
 - Some integrations may not work due to Termux limitations (Bluetooth, USB)
-- Keep Termux running in background (disable battery optimization)
+- Even with all settings, swiping away Termux from recent apps may still kill it on some devices
+- Use Termux:Boot + wake lock for best persistence
