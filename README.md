@@ -244,6 +244,127 @@ chmod +x ~/.termux/boot/start-services.sh
 - Local: http://localhost:8123
 - External: https://smarthome.yourdomain.com
 
+## Battery Charger Daemon
+
+A memory-efficient C program (~14KB) that automatically controls a smart power strip socket based on your Android battery level. It turns ON charging when battery drops below 30% and turns OFF when it exceeds 90%.
+
+### Why C?
+
+C is the most memory-efficient programming language, using minimal resources compared to Python or Node.js alternatives that would consume 50MB+.
+
+### Prerequisites
+
+```bash
+pkg install -y clang libcurl termux-api
+```
+
+Make sure Termux:API app is also installed from F-Droid.
+
+### Configuration
+
+1. Copy the example environment file:
+
+```bash
+cp .env.example ~/.env
+```
+
+2. Edit `~/.env` with your Home Assistant credentials:
+
+```bash
+HOMEASSISTANT_HOST=localhost
+HOMEASSISTANT_TOKEN=your_long_lived_access_token_here
+ENTITY_ID=switch.smart_power_strip_socket_4
+```
+
+To generate a long-lived access token in Home Assistant:
+- Go to your Profile → Security → Long-Lived Access Tokens → Create Token
+
+### Building
+
+```bash
+clang -O2 -o ~/battery_charger battery_charger.c -lcurl
+```
+
+### Manual Testing
+
+```bash
+# Run once to verify it works
+timeout 5 ~/battery_charger
+```
+
+Expected output:
+```
+Battery Charger Daemon Started
+  Host: http://localhost:8123
+  Entity: switch.smart_power_strip_socket_4
+  Low threshold: 30%
+  High threshold: 90%
+  Check interval: 60 seconds
+
+Battery: 45% | Switch: OFF -> No action needed
+```
+
+### Running as Termux Service
+
+1. Create the service directory:
+
+```bash
+mkdir -p $PREFIX/var/service/battery_charger/log
+```
+
+2. Create the run script:
+
+```bash
+cat > $PREFIX/var/service/battery_charger/run << 'EOF'
+#!/data/data/com.termux/files/usr/bin/sh
+exec 2>&1
+exec /data/data/com.termux/files/home/battery_charger
+EOF
+chmod +x $PREFIX/var/service/battery_charger/run
+```
+
+3. Create the log script:
+
+```bash
+cat > $PREFIX/var/service/battery_charger/log/run << 'EOF'
+#!/data/data/com.termux/files/usr/bin/sh
+mkdir -p $PREFIX/var/log/battery_charger
+exec svlogd -tt $PREFIX/var/log/battery_charger
+EOF
+chmod +x $PREFIX/var/service/battery_charger/log/run
+```
+
+### Service Management
+
+```bash
+# Check status
+SVDIR=$PREFIX/var/service sv status battery_charger
+
+# Start/Stop/Restart
+SVDIR=$PREFIX/var/service sv up battery_charger
+SVDIR=$PREFIX/var/service sv down battery_charger
+SVDIR=$PREFIX/var/service sv restart battery_charger
+
+# View logs
+cat $PREFIX/var/log/battery_charger/current | tail -20
+```
+
+### How It Works
+
+| Battery Level | Charger State | Action |
+|---------------|---------------|--------|
+| < 30% | OFF | Turn ON charger |
+| > 90% | ON | Turn OFF charger |
+| 30-90% | Any | No action |
+
+The daemon checks battery status every 60 seconds using `termux-battery-status` and controls the smart socket via Home Assistant REST API.
+
+### Home Assistant API Endpoints Used
+
+- `GET /api/states/{entity_id}` - Check current switch state
+- `POST /api/services/switch/turn_on` - Turn on the socket
+- `POST /api/services/switch/turn_off` - Turn off the socket
+
 ## Notes
 
 - First startup takes a while as HA downloads additional components

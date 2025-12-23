@@ -1,1 +1,13 @@
-.vercel
+# Environment files with secrets
+.env
+
+# Compiled binary
+battery_charger
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
