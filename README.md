@@ -338,15 +338,43 @@ chmod +x $PREFIX/var/service/battery_charger/log/run
 
 ```bash
 # Check status
-SVDIR=$PREFIX/var/service sv status battery_charger
+sv status battery_charger
 
 # Start/Stop/Restart
-SVDIR=$PREFIX/var/service sv up battery_charger
-SVDIR=$PREFIX/var/service sv down battery_charger
-SVDIR=$PREFIX/var/service sv restart battery_charger
+sv up battery_charger
+sv down battery_charger
+sv restart battery_charger
+```
 
-# View logs
+### Checking Logs
+
+The service logs are stored in `$PREFIX/var/log/battery_charger/` and managed by `svlogd`.
+
+```bash
+# View recent logs (last 20 lines)
 cat $PREFIX/var/log/battery_charger/current | tail -20
+
+# View more logs (last 100 lines)
+cat $PREFIX/var/log/battery_charger/current | tail -100
+
+# Follow logs in real-time
+tail -f $PREFIX/var/log/battery_charger/current
+
+# Search logs for specific events
+grep "Turn ON" $PREFIX/var/log/battery_charger/current
+grep "Turn OFF" $PREFIX/var/log/battery_charger/current
+```
+
+Log entries include timestamps and show battery percentage, switch state, and actions taken:
+```
+2025-12-24_22:39:06.63325 Battery: 92% | Switch: OFF -> No action needed
+2025-12-24_08:15:32.12345 Battery: 29% | Switch: OFF -> Turning ON charger
+2025-12-24_12:45:18.98765 Battery: 91% | Switch: ON -> Turning OFF charger
+```
+
+**Via SSH:** When running commands remotely, escape `$PREFIX` to prevent local shell expansion:
+```bash
+ssh -p 8022 user@device "cat \$PREFIX/var/log/battery_charger/current | tail -100"
 ```
 
 ### How It Works
