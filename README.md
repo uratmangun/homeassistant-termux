@@ -222,6 +222,66 @@ cat $PREFIX/etc/sv/homeassistant/log/main/current | tail -50
 cat $PREFIX/etc/sv/cloudflared/log/main/current | tail -50
 ```
 
+## Log Management (Remote via SSH)
+
+Home Assistant logs can grow very large and fill up storage. Here's how to manage them remotely.
+
+### Check Log Size
+
+```bash
+ssh -p 8022 u0_a319@<device-ip> "du -sh ~/homeassistant-config/*.log*"
+```
+
+### Clear All Logs
+
+```bash
+# Remove old rotated logs and truncate current log
+ssh -p 8022 u0_a319@<device-ip> "rm -f ~/homeassistant-config/home-assistant.log.* && : > ~/homeassistant-config/home-assistant.log"
+```
+
+### Restart Home Assistant Service
+
+```bash
+ssh -p 8022 u0_a319@<device-ip> "SVDIR=\$PREFIX/var/service sv restart homeassistant"
+```
+
+### Restart Cloudflared Service
+
+```bash
+ssh -p 8022 u0_a319@<device-ip> "SVDIR=\$PREFIX/var/service sv restart cloudflared"
+```
+
+### Check Service Status
+
+```bash
+ssh -p 8022 u0_a319@<device-ip> "SVDIR=\$PREFIX/var/service sv status homeassistant cloudflared"
+```
+
+### Disable Logging (Recommended for Low Storage)
+
+Add this to `~/homeassistant-config/configuration.yaml` to minimize logging:
+
+```yaml
+# Only log critical errors
+logger:
+  default: critical
+  logs:
+    homeassistant: critical
+    homeassistant.core: critical
+    homeassistant.components: critical
+
+# Keep recorder data for only 1 day
+recorder:
+  purge_keep_days: 1
+  commit_interval: 60
+```
+
+Then restart Home Assistant:
+
+```bash
+ssh -p 8022 u0_a319@<device-ip> "SVDIR=\$PREFIX/var/service sv restart homeassistant"
+```
+
 ## Auto-Start on Boot
 
 Install Termux:Boot from F-Droid, open it once, then:
