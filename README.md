@@ -229,32 +229,32 @@ Home Assistant logs can grow very large and fill up storage. Here's how to manag
 ### Check Log Size
 
 ```bash
-ssh -p 8022 u0_a319@<device-ip> "du -sh ~/homeassistant-config/*.log*"
+ssh -p 8022 <termux-user>@<device-ip> "du -sh ~/homeassistant-config/*.log*"
 ```
 
 ### Clear All Logs
 
 ```bash
 # Remove old rotated logs and truncate current log
-ssh -p 8022 u0_a319@<device-ip> "rm -f ~/homeassistant-config/home-assistant.log.* && : > ~/homeassistant-config/home-assistant.log"
+ssh -p 8022 <termux-user>@<device-ip> "rm -f ~/homeassistant-config/home-assistant.log.* && : > ~/homeassistant-config/home-assistant.log"
 ```
 
 ### Restart Home Assistant Service
 
 ```bash
-ssh -p 8022 u0_a319@<device-ip> "SVDIR=\$PREFIX/var/service sv restart homeassistant"
+ssh -p 8022 <termux-user>@<device-ip> "SVDIR=\$PREFIX/var/service sv restart homeassistant"
 ```
 
 ### Restart Cloudflared Service
 
 ```bash
-ssh -p 8022 u0_a319@<device-ip> "SVDIR=\$PREFIX/var/service sv restart cloudflared"
+ssh -p 8022 <termux-user>@<device-ip> "SVDIR=\$PREFIX/var/service sv restart cloudflared"
 ```
 
 ### Check Service Status
 
 ```bash
-ssh -p 8022 u0_a319@<device-ip> "SVDIR=\$PREFIX/var/service sv status homeassistant cloudflared"
+ssh -p 8022 <termux-user>@<device-ip> "SVDIR=\$PREFIX/var/service sv status homeassistant cloudflared"
 ```
 
 ### Disable Logging (Recommended for Low Storage)
@@ -279,7 +279,7 @@ recorder:
 Then restart Home Assistant:
 
 ```bash
-ssh -p 8022 u0_a319@<device-ip> "SVDIR=\$PREFIX/var/service sv restart homeassistant"
+ssh -p 8022 <termux-user>@<device-ip> "SVDIR=\$PREFIX/var/service sv restart homeassistant"
 ```
 
 ## Auto-Start on Boot
@@ -555,9 +555,124 @@ Then toggle ON **Termux** in the list.
 
 Once locked, Termux will show a small lock icon in recent apps and will **NOT be killed** when you tap "Clear All".
 
+## Troubleshooting: Termux Getting Killed
+
+Even with all the persistence settings configured, MIUI/Xiaomi can still occasionally kill Termux. Here's how to investigate and prevent it.
+
+### Investigating What Happened
+
+**1. Check service restart times via logs:**
+```bash
+# View when battery_charger daemon was restarted (indicates Termux restarted)
+ssh -p 8022 <termux-user>@<device-ip> "grep -r 'Started' \$PREFIX/var/log/battery_charger/ 2>/dev/null"
+
+# Check the gap between the last log before kill and restart
+ssh -p 8022 <termux-user>@<device-ip> "cat \$PREFIX/var/log/battery_charger/@* | tail -100"
+ssh -p 8022 <termux-user>@<device-ip> "cat \$PREFIX/var/log/battery_charger/current | head -10"
+```
+
+**2. Check how long services have been running:**
+```bash
+ssh -p 8022 <termux-user>@<device-ip> "SVDIR=\$PREFIX/var/service sv status homeassistant cloudflared battery_charger"
+```
+The number in seconds after (pid XXXX) shows uptime since last restart.
+
+**3. Check system memory and battery:**
+```bash
+ssh -p 8022 <termux-user>@<device-ip> "cat /proc/meminfo | head -10"
+ssh -p 8022 <termux-user>@<device-ip> "termux-battery-status"
+```
+
+### Common Causes on MIUI/Xiaomi
+
+1. **MIUI Memory Management** - Even with settings configured, MIUI can kill apps during:
+   - Low memory pressure (other apps request RAM)
+   - Scheduled system cleanup routines
+   - Security Center/Boost running automatically
+
+2. **Android OOM Killer** - Triggered when system memory is low
+
+3. **Screen Off Optimization** - Some MIUI versions kill apps after screen is off for extended periods
+
+4. **Game Turbo / Game Mode** - Can aggressively free memory
+
+### Additional Prevention ADB Commands
+
+Apply these additional commands for maximum protection:
+
+```bash
+# Set Termux as a "protected" app (highest priority)
+adb shell "cmd appops set com.termux SYSTEM_EXEMPT_FROM_POWER_RESTRICTIONS allow"
+
+# Prevent MIUI from restricting Termux's memory
+adb shell "cmd appops set com.termux LEGACY_STORAGE allow"
+
+# Disable app hibernation for Termux
+adb shell "cmd appops set com.termux APP_HIBERNATION ignore"
+
+# Set Termux to standby bucket "ACTIVE" (never idle)
+adb shell "am set-standby-bucket com.termux active"
+
+# Disable background dexopt for Termux
+adb shell "cmd package bg-dexopt-job --disable"
+
+# Force Termux to foreground importance
+adb shell "cmd deviceidle tempwhitelist -d 2147483647 com.termux"
+```
+
+### MIUI Specific Additional Settings
+
+1. **Disable Memory Extension (RAM Plus)**
+   - Settings → Additional Settings → Memory Extension → OFF
+   - This virtual RAM feature can cause app kills
+
+2. **Disable MIUI Optimization**
+   - Settings → About Phone → tap MIUI Version 7 times
+   - Settings → Additional Settings → Developer Options
+   - Turn OFF "MIUI Optimization"
+   - Reboot device
+
+3. **Disable Battery Saver Completely**
+   - Settings → Battery → Battery Saver → OFF
+   - Also disable "Ultra Battery Saver"
+
+4. **Security App Settings**
+   - Open Security App → Settings (gear icon)
+   - Battery → Termux → No restrictions
+   - Battery → Termux → Allow background activity
+
+### Termux:Boot Auto-Recovery
+
+Ensure Termux:Boot is properly configured so that even if Termux is killed, it will restart when the screen is turned on or device is rebooted:
+
+```bash
+# Verify boot script exists and is executable
+cat ~/.termux/boot/start-services.sh
+chmod +x ~/.termux/boot/start-services.sh
+```
+
+### Monitor Script (Optional)
+
+Create a script on your local machine to periodically check if Termux is running:
+
+```bash
+#!/bin/bash
+# save as ~/check-termux.sh on your PC
+while true; do
+  if ssh -p 8022 <termux-user>@<device-ip> -o ConnectTimeout=5 "echo ok" 2>/dev/null; then
+    echo "$(date): Termux is running"
+  else
+    echo "$(date): WARNING - Termux appears to be down!"
+    # Optionally: send notification, restart via adb, etc.
+  fi
+  sleep 60
+done
+```
+
 ## Notes
 
 - First startup takes a while as HA downloads additional components
 - Some integrations may not work due to Termux limitations (Bluetooth, USB)
 - Even with all settings, swiping away Termux from recent apps may still kill it on some devices
 - Use Termux:Boot + wake lock for best persistence
+- **MIUI is extremely aggressive** - even with all settings, occasional kills may happen; Termux:Boot ensures recovery
